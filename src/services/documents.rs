@@ -3,8 +3,8 @@ use actix_web::{
 };
 use serde_json::json;
 use crate::{
-    model::{TaskModel, DocumentModel},
-    schema::{CreateTaskSchema, CreateDocumentSchema, FilterOptions, UpdateTaskSchema, UpdateDocumentSchema},
+    model::DocumentModel,
+    schema::{CreateDocumentSchema, UpdateDocumentSchema, FilterOptions},
     AppState
 };
 use sqlx::PgPool;
@@ -65,6 +65,7 @@ async fn create_document(
         }
     }
 }
+
 
 // Endpoint para listar todos os documentos
 #[get("/documents")]
@@ -133,6 +134,7 @@ pub async fn get_document_by_id(
         }
     }
 }
+
 
 // Endpoint para excluir um documento por ID
 #[delete("/documents/{id}")]
@@ -214,15 +216,11 @@ async fn update_document_by_id(
     }
 }
 
-// Configuração das rotas
-pub fn config(conf: &mut ServiceConfig) {
-    conf.service(
-        scope("/documents")
-            .service(health_checker)
-            .service(create_document)
-            .service(get_all_documents)
-            .service(get_document_by_id)
-            .service(delete_document_by_id)
-            .service(update_document_by_id)
-    );
+// Configuração das rotas para documentos
+pub fn config_documents(conf: &mut ServiceConfig) {
+    conf.service(create_document)
+       .service(get_all_documents)
+       .service(get_document_by_id)
+       .service(update_document_by_id)
+       .service(delete_document_by_id);
 }

@@ -3,25 +3,13 @@ use actix_web::{
 };
 use serde_json::json;
 use crate::{
-    model::{TaskModel, DocumentModel},
-    schema::{CreateTaskSchema, CreateDocumentSchema, FilterOptions, UpdateTaskSchema, UpdateDocumentSchema},
+    model::TaskModel,
+    schema::{CreateTaskSchema, UpdateTaskSchema, FilterOptions},
     AppState
 };
 use sqlx::PgPool;
 use uuid::Uuid;
 
-// Endpoint de verificação de saúde
-#[get("/healthchecker")]
-async fn health_checker() -> impl Responder {
-    const MESSAGE: &str = "Health check: API is up and running smoothly.";
-
-    HttpResponse::Ok().json(json!({
-        "status": "success",
-        "message": MESSAGE
-    }))
-}
-
-// Endpoint para criar uma tarefa
 #[post("/tasks")]
 async fn create_task(
     body: Json<CreateTaskSchema>,
@@ -61,7 +49,6 @@ async fn create_task(
     }
 }
 
-// Endpoint para listar todas as tarefas
 #[get("/tasks")]
 pub async fn get_all_tasks(
     opts: Query<FilterOptions>,
@@ -96,7 +83,6 @@ pub async fn get_all_tasks(
     }
 }
 
-// Endpoint para obter uma tarefa por ID
 #[get("/tasks/{id}")]
 async fn get_task_by_id(
     path: Path<Uuid>,
@@ -129,30 +115,6 @@ async fn get_task_by_id(
     }
 }
 
-// Endpoint para excluir uma tarefa por ID
-#[delete("/tasks/{id}")]
-async fn delete_task_by_id(
-    path: Path<Uuid>,
-    data: Data<AppState>
-) -> impl Responder {
-    let task_id = path.into_inner();
-
-    match sqlx::query!("DELETE FROM tasks WHERE id = $1", task_id)
-        .execute(&data.db)
-        .await
-    {
-        Ok(_) => HttpResponse::NoContent().finish(),
-        Err(err) => {
-            let response = json!({
-                "status": "error",
-                "message": format!("Failed to delete task: {:?}", err)
-            });
-            HttpResponse::InternalServerError().json(response)
-        }
-    }
-}
-
-// Endpoint para atualizar uma tarefa por ID
 #[patch("/tasks/{id}")]
 async fn update_task_by_id(
     path: Path<Uuid>,
@@ -161,13 +123,11 @@ async fn update_task_by_id(
 ) -> impl Responder {
     let task_id = path.into_inner();
 
-    // Recuperar a tarefa existente
     match sqlx::query_as!(TaskModel, "SELECT * FROM tasks WHERE id = $1", task_id)
         .fetch_one(&data.db)
         .await
     {
         Ok(task) => {
-            // Atualizar a tarefa
             let update_result = sqlx::query_as!(
                 TaskModel,
                 "UPDATE tasks SET title = COALESCE($1, title), content = COALESCE($2, content) WHERE id = $3 RETURNING *",
@@ -205,14 +165,33 @@ async fn update_task_by_id(
     }
 }
 
-pub fn config(conf: &mut ServiceConfig) {
-    conf.service(
-        scope("/tasks")
-            .service(health_checker)
-            .service(create_task)
-            .service(get_all_tasks)
-            .service(get_task_by_id)
-            .service(delete_task_by_id)
-            .service(update_task_by_id)
-    );
+#[delete("/tasks/{id}")]
+async fn delete_task_by_id(
+    path: Path<Uuid>,
+    data: Data<AppState>
+) -> impl Responder {
+    let task_id = path.into_inner();
+
+    match sqlx::query!("DELETE FROM tasks WHERE id = $1", task_id)
+        .execute(&data.db)
+        .await
+    {
+        Ok(_) => HttpResponse::NoContent().finish(),
+        Err(err) => {
+            let response = json!({
+                "status": "error",
+                "message": format!("Failed to delete task: {:?}", err)
+            });
+            HttpResponse::InternalServerError().json(response)
+        }
+    }
+}
+
+// Configuração das rotas para tarefas
+pub fn config_tasks(conf: &mut ServiceConfig) {
+    conf.service(create_task)
+       .service(get_all_tasks)
+       .service(get_task_by_id)
+       .service(update_task_by_id)
+       .service(delete_task_by_id);
 }

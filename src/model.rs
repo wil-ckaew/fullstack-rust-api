@@ -34,7 +34,7 @@ pub struct ParentModel {
     pub name: String,
     pub email: String,
     pub phone: Option<String>,
-    pub created_at: Option<DateTime<Utc>>,
+    pub created_at: Option<DateTime<Utc>>,  // Ajustado para Option<DateTime<Utc>> para lidar com valores nulos
 }
 
 #[derive(Debug, FromRow, Deserialize, Serialize)]
