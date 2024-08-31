@@ -1,0 +1,15 @@
+services:
+  db:
+    container_name: db
+    image: postgres:13
+    environment:
+      POSTGRES_USER: retesp
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: bd4linhas
+    ports:
+      - 5432:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata: {}
