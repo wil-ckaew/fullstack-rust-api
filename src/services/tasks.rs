@@ -187,7 +187,7 @@ async fn delete_task_by_id(
     }
 }
 
-// Configuração das rotas para tarefas
+// Configuração das rotas para tarefas normais
 pub fn config_tasks(conf: &mut ServiceConfig) {
     conf.service(create_task)
        .service(get_all_tasks)
