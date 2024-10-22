@@ -74,20 +74,20 @@ async fn create_task(
 // Endpoint para criar um documento
 #[post("/documents")]
 async fn create_document(
-    body: Json<CreateDocumentSchema>,
+    body: Json<CreateDocumentSchema>, // O schema deve ter student_id
     data: Data<AppState>
 ) -> impl Responder {
     let query = r#"
-        INSERT INTO documents (user_id, doc_type, filename)
+        INSERT INTO documents (student_id, doc_type, filename)  // Altere de user_id para student_id
         VALUES ($1, $2, $3)
-        RETURNING id, user_id, doc_type, filename, created_at
+        RETURNING id, student_id, doc_type, filename, created_at  // Altere aqui também
     "#;
 
     // Gera um nome de arquivo com base no UUID
     let filename = format!("document_{}.jpg", Uuid::new_v4());
 
     match sqlx::query_as::<_, DocumentModel>(query)
-        .bind(&body.user_id)
+        .bind(&body.student_id) // Altere de user_id para student_id
         .bind(&body.doc_type)
         .bind(&filename)
         .fetch_one(&data.db)
@@ -98,7 +98,7 @@ async fn create_document(
                 "status": "success",
                 "document": {
                     "id": document.id,
-                    "user_id": document.user_id,
+                    "student_id": document.student_id, // Altere de user_id para student_id
                     "doc_type": document.doc_type,
                     "filename": document.filename,
                     "created_at": document.created_at
@@ -115,6 +115,7 @@ async fn create_document(
         }
     }
 }
+
 
 // Endpoint de criação de tarefa
 #[post("/users")]
@@ -622,7 +623,7 @@ async fn update_task_by_id(
 #[patch("/documents/{id}")]
 async fn update_document_by_id(
     path: Path<Uuid>,
-    body: Json<UpdateDocumentSchema>,
+    body: Json<UpdateDocumentSchema>, // As alterações em UpdateDocumentSchema devem incluir student_id
     data: Data<AppState>
 ) -> impl Responder {
     let document_id = path.into_inner();
@@ -636,13 +637,14 @@ async fn update_document_by_id(
     .fetch_one(&data.db)
     .await
     {
-        Ok(_document) => {
+        Ok(existing_document) => {
             // Atualizar o documento
             let update_result = sqlx::query_as!(
                 DocumentModel,
-                "UPDATE documents SET user_id = COALESCE($1, user_id), doc_type = COALESCE($2, doc_type) WHERE id = $3 RETURNING *",
-                body.user_id.as_ref(),
+                "UPDATE documents SET student_id = COALESCE($1, student_id), doc_type = COALESCE($2, doc_type), filename = COALESCE($3, filename) WHERE id = $4 RETURNING *",
+                body.student_id.as_ref(),  // Altere de user_id para student_id
                 body.doc_type.as_ref(),
+                existing_document.filename.as_str(),  // Manter o mesmo filename se não for alterado
                 document_id
             )
             .fetch_one(&data.db)
@@ -674,6 +676,7 @@ async fn update_document_by_id(
         }
     }
 }
+
 
 // Endpoint para atualizar uma tarefa por ID
 #[patch("/users/{id}")]

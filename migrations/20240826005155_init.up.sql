@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 -- Create documents table
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY NOT NULL DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    student_id UUID NOT NULL,
     doc_type TEXT NOT NULL,
     filename TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

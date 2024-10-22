@@ -1,15 +1,21 @@
 use actix_web::{
-    get, post, delete, patch, web::{Data, Json, scope, Query, Path, ServiceConfig}, HttpResponse, Responder
+    get, post, delete, patch, web::{Data, Json, Path, Query, ServiceConfig},
+    HttpResponse, Responder
 };
+use actix_files::Files;
+use actix_multipart::Multipart;
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
 use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
 use crate::{
-    model::PhotoModel,
+    model::{PhotoModel, StudentModel},
     schema::{CreatePhotoSchema, UpdatePhotoSchema, FilterOptions},
     AppState
 };
-use sqlx::PgPool;
-use uuid::Uuid;
 
+// Função para criar uma nova foto
 #[post("/photos")]
 async fn create_photo(
     body: Json<CreatePhotoSchema>,
@@ -51,6 +57,7 @@ async fn create_photo(
     }
 }
 
+// Função para obter todas as fotos
 #[get("/photos")]
 pub async fn get_all_photos(
     opts: Query<FilterOptions>,
@@ -85,6 +92,7 @@ pub async fn get_all_photos(
     }
 }
 
+// Função para obter uma foto por ID
 #[get("/photos/{id}")]
 async fn get_photo_by_id(
     path: Path<Uuid>,
@@ -117,6 +125,7 @@ async fn get_photo_by_id(
     }
 }
 
+// Função para atualizar uma foto
 #[patch("/photos/{id}")]
 async fn update_photo_by_id(
     path: Path<Uuid>,
@@ -125,11 +134,15 @@ async fn update_photo_by_id(
 ) -> impl Responder {
     let photo_id = path.into_inner();
 
-    match sqlx::query_as!(PhotoModel, "SELECT * FROM photos WHERE id = $1", photo_id)
-        .fetch_one(&data.db)
-        .await
+    match sqlx::query_as!(
+        PhotoModel,
+        "SELECT * FROM photos WHERE id = $1",
+        photo_id
+    )
+    .fetch_one(&data.db)
+    .await
     {
-        Ok(photo) => {
+        Ok(_) => {
             let update_result = sqlx::query_as!(
                 PhotoModel,
                 "UPDATE photos SET student_id = COALESCE($1, student_id), filename = COALESCE($2, filename), description = COALESCE($3, description) WHERE id = $4 RETURNING *",
@@ -168,6 +181,7 @@ async fn update_photo_by_id(
     }
 }
 
+// Função para deletar uma foto por ID
 #[delete("/photos/{id}")]
 async fn delete_photo_by_id(
     path: Path<Uuid>,
@@ -190,11 +204,92 @@ async fn delete_photo_by_id(
     }
 }
 
-// Configuração das rotas para tarefas
+// Função para fazer upload de imagens
+#[post("/upload")]
+async fn upload_image(mut payload: Multipart) -> impl Responder {
+    while let Some(field) = payload.next().await {
+        match field {
+            Ok(mut field) => {
+                let filename = field
+                    .content_disposition()
+                    .get_filename()
+                    .map_or("temp".to_string(), |f| f.to_string());
+
+                let filepath = format!("./static/{}", filename);
+                println!("Saving file to: {}", filepath); // Adiciona log para depuração
+
+                // Cria o arquivo e verifica se a criação foi bem-sucedida
+                let file_result = match tokio::fs::File::create(&filepath).await {
+                    Ok(f) => f,
+                    Err(e) => return HttpResponse::InternalServerError().json(json!({
+                        "status": "error",
+                        "message": format!("Failed to create file: {:?}", e)
+                    })),
+                };
+
+                let mut file = tokio::io::BufWriter::new(file_result);
+
+                // Lê e escreve o conteúdo do arquivo
+                while let Some(chunk) = field.next().await {
+                    let data = match chunk {
+                        Ok(d) => d,
+                        Err(e) => return HttpResponse::InternalServerError().json(json!({
+                            "status": "error",
+                            "message": format!("Failed to read chunk: {:?}", e)
+                        })),
+                    };
+
+                    if let Err(e) = file.write_all(&data).await {
+                        return HttpResponse::InternalServerError().json(json!({
+                            "status": "error",
+                            "message": format!("Failed to write data: {:?}", e)
+                        }));
+                    }
+                }
+            }
+            Err(e) => return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": format!("Failed to process file: {:?}", e)
+            })),
+        }
+    }
+
+    HttpResponse::Ok().finish()
+}
+
+
+// Função para obter todos os alunos
+#[get("/students")]
+async fn get_students(data: Data<AppState>) -> impl Responder {
+    match sqlx::query_as!(StudentModel, "SELECT * FROM students")
+        .fetch_all(&data.db)
+        .await
+    {
+        Ok(students) => {
+            let response = json!({
+                "status": "success",
+                "students": students
+            });
+            HttpResponse::Ok().json(response)
+        }
+        Err(error) => {
+            let response = json!({
+                "status": "error",
+                "message": format!("Failed to get students: {:?}", error)
+            });
+            HttpResponse::InternalServerError().json(response)
+        }
+    }
+}
+
+// Configuração das rotas
 pub fn config_photos(conf: &mut ServiceConfig) {
     conf.service(create_photo)
        .service(get_all_photos)
        .service(get_photo_by_id)
        .service(update_photo_by_id)
-       .service(delete_photo_by_id);
+       .service(delete_photo_by_id)
+       .service(upload_image)
+       .service(Files::new("/static", "./static").show_files_listing())
+       .service(get_students);
 }

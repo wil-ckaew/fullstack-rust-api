@@ -1,14 +1,60 @@
 use actix_web::{
-    get, post, delete, patch, web::{Data, Json, scope, Query, Path, ServiceConfig}, HttpResponse, Responder
+    get, post, delete, patch, web::{Data, Json, Path, Query, ServiceConfig},
+    HttpResponse, Responder
 };
+use std::fs::File; // Adicione esta linha
+use actix_multipart::Multipart;
+use futures_util::StreamExt;
+use tokio::fs::File as TokioFile; // Use um alias para tokio::fs::File
+use tokio::io::AsyncWriteExt;
 use serde_json::json;
+use sqlx::PgPool;
+use uuid::Uuid;
+
 use crate::{
     model::FileMetadataModel,
     schema::{CreateFileMetadataSchema, UpdateFileMetadataSchema, FilterOptions},
     AppState
 };
-use sqlx::PgPool;
-use uuid::Uuid;
+
+#[post("/file_metadatas/upload")]
+async fn upload_file(
+    mut payload: Multipart,
+    data: Data<AppState>
+) -> impl Responder {
+    while let Some(field) = payload.next().await {
+        match field {
+            Ok(mut field) => { // Declare como mutável
+                let filename = field
+                    .content_disposition()
+                    .get_filename()
+                    .map(|f| f.to_string())
+                    .unwrap_or_else(|| "default_filename".to_string());
+
+                // Salva o arquivo
+                let filepath = format!("./uploads/{}", filename);
+                let mut f = TokioFile::create(&filepath).await.expect("Unable to create file");
+
+                while let Some(chunk) = field.next().await { // Agora field é mutável
+                    match chunk {
+                        Ok(data) => {
+                            f.write_all(&data).await.expect("Unable to write data");
+                        },
+                        Err(e) => {
+                            return HttpResponse::InternalServerError().json(json!({"status": "error", "message": format!("Error reading chunk: {:?}", e)}));
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(json!({"status": "error", "message": format!("Error reading field: {:?}", e)}));
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(json!({"status": "success", "message": "File uploaded successfully."}))
+}
+
 
 #[post("/file_metadatas")]
 async fn create_file_metadata(
@@ -201,6 +247,7 @@ pub fn config_file_metadatas(conf: &mut ServiceConfig) {
     conf.service(create_file_metadata)
        .service(get_all_file_metadatas)
        .service(get_file_metadata_by_id)
+       .service(upload_file)
        .service(update_file_metadata_by_id)
        .service(delete_file_metadata_by_id);
 }

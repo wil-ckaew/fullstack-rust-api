@@ -16,7 +16,8 @@ pub fn config(conf: &mut ServiceConfig) {
         actix_web::web::scope("/api")
             .configure(health::config_health)
             .configure(tasks::config_tasks)
-            .configure(documents::config_documents)
+            //.configure(documents::config_documents)
+            .configure(documents::configure_services) // Updated to call configure_services
             .configure(users::config_users)
             .configure(students::config_students)
             .configure(parents::config_parents)

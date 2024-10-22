@@ -123,49 +123,33 @@ async fn update_student_by_id(
 ) -> impl Responder {
     let student_id = path.into_inner();
 
-    // Recuperar a tarefa existente
-    match sqlx::query_as!(StudentModel, "SELECT * FROM students WHERE id = $1", student_id)
-        .fetch_one(&data.db)
-        .await
+    match sqlx::query_as!(
+        StudentModel,
+        "UPDATE students SET name = COALESCE($1, name), age = COALESCE($2, age) WHERE id = $3 RETURNING *",
+        body.name.as_ref(),
+        body.age.as_ref(),
+        student_id
+    )
+    .fetch_one(&data.db)
+    .await
     {
-        Ok(student) => {
-            // Atualizar a tarefa
-            let update_result = sqlx::query_as!(
-                StudentModel,
-                "UPDATE students SET name = COALESCE($1, name), age = COALESCE($2, age) WHERE id = $3 RETURNING *",
-                body.name.as_ref(),
-                body.age.as_ref(),
-                student_id
-            )
-            .fetch_one(&data.db)
-            .await;
-
-            match update_result {
-                Ok(updated_student) => {
-                    let response = json!({
-                        "status": "success",
-                        "student": updated_student
-                    });
-                    HttpResponse::Ok().json(response)
-                }
-                Err(update_error) => {
-                    let response = json!({
-                        "status": "error",
-                        "message": format!("Failed to update student: {:?}", update_error)
-                    });
-                    HttpResponse::InternalServerError().json(response)
-                }
-            }
+        Ok(updated_student) => {
+            let response = json!({
+                "status": "success",
+                "student": updated_student
+            });
+            HttpResponse::Ok().json(response)
         }
-        Err(fetch_error) => {
+        Err(update_error) => {
             let response = json!({
                 "status": "error",
-                "message": format!("Student not found: {:?}", fetch_error)
+                "message": format!("Failed to update student: {:?}", update_error)
             });
-            HttpResponse::NotFound().json(response)
+            HttpResponse::InternalServerError().json(response)
         }
     }
 }
+
 
 #[delete("/students/{id}")]
 async fn delete_student_by_id(

@@ -1,15 +1,23 @@
 use actix_web::{
-    get, post, delete, patch, web::{Data, Json, scope, Query, Path, ServiceConfig}, HttpResponse, Responder
+    get, post, delete, patch, web::{Data, Json, Path, Query, ServiceConfig},
+    HttpResponse, Responder
 };
+use actix_files::Files;
+use actix_multipart::Multipart;
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
 use serde_json::json;
-use crate::{
-    model::VideoModel,
-    schema::{CreateVideoSchema, UpdateVideoSchema, FilterOptions},
-    AppState
-};
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::path::PathBuf;
 
+use crate::{
+    model::{VideoModel, PhotoModel, StudentModel},
+    schema::{CreateVideoSchema, UpdateVideoSchema, FilterOptions, CreatePhotoSchema, UpdatePhotoSchema},
+    AppState
+};
+
+// Função para criar um novo vídeo
 #[post("/videos")]
 async fn create_video(
     body: Json<CreateVideoSchema>,
@@ -29,7 +37,7 @@ async fn create_video(
         .await
     {
         Ok(video) => {
-            let response = json!({
+            let response = json!( {
                 "status": "success",
                 "video": {
                     "id": video.id,
@@ -42,7 +50,7 @@ async fn create_video(
             HttpResponse::Ok().json(response)
         }
         Err(error) => {
-            let response = json!({
+            let response = json!( {
                 "status": "error",
                 "message": format!("Failed to create video: {:?}", error)
             });
@@ -51,6 +59,7 @@ async fn create_video(
     }
 }
 
+// Função para obter todos os vídeos
 #[get("/videos")]
 pub async fn get_all_videos(
     opts: Query<FilterOptions>,
@@ -69,14 +78,14 @@ pub async fn get_all_videos(
     .await
     {
         Ok(videos) => {
-            let response = json!({
+            let response = json!( {
                 "status": "success",
                 "videos": videos
             });
             HttpResponse::Ok().json(response)
         }
         Err(error) => {
-            let response = json!({
+            let response = json!( {
                 "status": "error",
                 "message": format!("Failed to get videos: {:?}", error)
             });
@@ -85,6 +94,7 @@ pub async fn get_all_videos(
     }
 }
 
+// Função para obter um vídeo por ID
 #[get("/videos/{id}")]
 async fn get_video_by_id(
     path: Path<Uuid>,
@@ -101,14 +111,14 @@ async fn get_video_by_id(
     .await
     {
         Ok(video) => {
-            let response = json!({
+            let response = json!( {
                 "status": "success",
                 "video": video
             });
             HttpResponse::Ok().json(response)
         }
         Err(error) => {
-            let response = json!({
+            let response = json!( {
                 "status": "error",
                 "message": format!("Failed to get video: {:?}", error)
             });
@@ -117,6 +127,7 @@ async fn get_video_by_id(
     }
 }
 
+// Função para atualizar um vídeo
 #[patch("/videos/{id}")]
 async fn update_video_by_id(
     path: Path<Uuid>,
@@ -125,11 +136,15 @@ async fn update_video_by_id(
 ) -> impl Responder {
     let video_id = path.into_inner();
 
-    match sqlx::query_as!(VideoModel, "SELECT * FROM videos WHERE id = $1", video_id)
-        .fetch_one(&data.db)
-        .await
+    match sqlx::query_as!(
+        VideoModel,
+        "SELECT * FROM videos WHERE id = $1",
+        video_id
+    )
+    .fetch_one(&data.db)
+    .await
     {
-        Ok(video) => {
+        Ok(_) => {
             let update_result = sqlx::query_as!(
                 VideoModel,
                 "UPDATE videos SET student_id = COALESCE($1, student_id), filename = COALESCE($2, filename), description = COALESCE($3, description) WHERE id = $4 RETURNING *",
@@ -143,14 +158,14 @@ async fn update_video_by_id(
 
             match update_result {
                 Ok(updated_video) => {
-                    let response = json!({
+                    let response = json!( {
                         "status": "success",
                         "video": updated_video
                     });
                     HttpResponse::Ok().json(response)
                 }
                 Err(update_error) => {
-                    let response = json!({
+                    let response = json!( {
                         "status": "error",
                         "message": format!("Failed to update video: {:?}", update_error)
                     });
@@ -159,7 +174,7 @@ async fn update_video_by_id(
             }
         }
         Err(fetch_error) => {
-            let response = json!({
+            let response = json!( {
                 "status": "error",
                 "message": format!("Video not found: {:?}", fetch_error)
             });
@@ -168,6 +183,7 @@ async fn update_video_by_id(
     }
 }
 
+// Função para deletar um vídeo por ID
 #[delete("/videos/{id}")]
 async fn delete_video_by_id(
     path: Path<Uuid>,
@@ -181,7 +197,7 @@ async fn delete_video_by_id(
     {
         Ok(_) => HttpResponse::NoContent().finish(),
         Err(err) => {
-            let response = json!({
+            let response = json!( {
                 "status": "error",
                 "message": format!("Failed to delete video: {:?}", err)
             });
@@ -190,11 +206,103 @@ async fn delete_video_by_id(
     }
 }
 
-// Configuração das rotas para tarefas
+// Função para upload de vídeo
+#[post("/upload-video")]
+async fn upload_video(
+    data: Data<AppState>,
+    mut payload: Multipart
+) -> impl Responder {
+    while let Some(field) = payload.next().await {
+        match field {
+            Ok(mut field) => {
+                // Get the filename from the field
+                let filename = field.content_disposition()
+                    .get_filename()
+                    .map_or("temp.mp4".to_string(), |f| f.to_string());
+                let filepath = format!("./uploads/{}", filename);
+                println!("Saving file to: {}", filepath);
+
+                // Create a file in the uploads directory
+                let mut file = match tokio::fs::File::create(&filepath).await {
+                    Ok(file) => file,
+                    Err(e) => return HttpResponse::InternalServerError().json({
+                        let message = format!("Failed to create file: {:?}", e);
+                        println!("{}", message);
+                        json!({ "status": "error", "message": message })
+                    }),
+                };
+
+                // Write the chunks into the file
+                while let Some(chunk) = field.next().await {
+                    match chunk {
+                        Ok(data) => {
+                            if let Err(e) = file.write_all(&data).await {
+                                return HttpResponse::InternalServerError().json({
+                                    let message = format!("Failed to write to file: {:?}", e);
+                                    println!("{}", message);
+                                    json!({ "status": "error", "message": message })
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            return HttpResponse::InternalServerError().json({
+                                let message = format!("Failed to read chunk: {:?}", e);
+                                println!("{}", message);
+                                json!({ "status": "error", "message": message })
+                            });
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return HttpResponse::InternalServerError().json({
+                    let message = format!("Failed to process file: {:?}", e);
+                    println!("{}", message);
+                    json!({ "status": "error", "message": message })
+                });
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(json!( {
+        "status": "success",
+        "message": "File uploaded successfully"
+    }))
+}
+
+
+// Função para obter todos os alunos
+#[get("/students")]
+async fn get_students(data: Data<AppState>) -> impl Responder {
+    match sqlx::query_as!(StudentModel, "SELECT * FROM students")
+        .fetch_all(&data.db)
+        .await
+    {
+        Ok(students) => {
+            let response = json!( {
+                "status": "success",
+                "students": students
+            });
+            HttpResponse::Ok().json(response)
+        }
+        Err(error) => {
+            let response = json!( {
+                "status": "error",
+                "message": format!("Failed to get students: {:?}", error)
+            });
+            HttpResponse::InternalServerError().json(response)
+        }
+    }
+}
+
+// Configuração das rotas para vídeos e alunos
 pub fn config_videos(conf: &mut ServiceConfig) {
     conf.service(create_video)
        .service(get_all_videos)
        .service(get_video_by_id)
        .service(update_video_by_id)
-       .service(delete_video_by_id);
+       .service(delete_video_by_id)
+       .service(upload_video) // Adicionando o serviço de upload de vídeo
+       .service(Files::new("/static", "./static").show_files_listing())
+       .service(get_students);
 }

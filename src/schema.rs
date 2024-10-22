@@ -16,7 +16,7 @@ pub struct CreateStudentSchema {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CreateDocumentSchema {
-    pub user_id: Uuid,
+    pub student_id: Uuid, // Altere aqui de user_id para student_id
     pub doc_type: String,
     pub filename: String, // Adicionado para corresponder à criação de documentos
 }
@@ -84,7 +84,7 @@ pub struct UpdateStudentSchema {
 
 #[derive(Serialize, Deserialize, Debug)] // Adicionado Serialize para consistência
 pub struct UpdateDocumentSchema {
-    pub user_id: Option<Uuid>,
+    pub student_id: Option<Uuid>, // Altere aqui de user_id para student_id
     pub doc_type: Option<String>,
     pub filename: Option<String>, // Adicionado para permitir atualização do filename
 }

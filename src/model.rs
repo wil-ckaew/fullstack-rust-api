@@ -14,7 +14,7 @@ pub struct TaskModel {
 #[derive(Debug, FromRow, Deserialize, Serialize)]
 pub struct DocumentModel {
     pub id: Uuid,
-    pub user_id: Uuid,
+    pub student_id: Uuid,  // Altere aqui de user_id para student_id
     pub doc_type: String,
     pub filename: String,
     pub created_at: Option<DateTime<Utc>>,
